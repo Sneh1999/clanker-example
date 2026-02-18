@@ -1,6 +1,8 @@
 ## Clanker Swap Example
 
 This app demonstrates a swap flow for Clanker tokens on Base.
+<img width="1223" height="713" alt="image" src="https://github.com/user-attachments/assets/f54a30ec-9a72-4b25-8a2f-8d092a0e795e" />
+
 
 ## Getting Started
 

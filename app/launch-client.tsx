@@ -160,10 +160,6 @@ export function LaunchClient() {
     { tokenAddress: CLANKER_TOKEN_OPTIONS[2].address },
     { enabled: true, chainId: BASE_CHAIN_ID },
   );
-  const tokenOption3 = useToken(
-    { tokenAddress: CLANKER_TOKEN_OPTIONS[3].address },
-    { enabled: true, chainId: BASE_CHAIN_ID },
-  );
 
   const pairedTokenAddress = useMemo(() => {
     if (!poolKey) return null;
@@ -191,7 +187,6 @@ export function LaunchClient() {
     tokenOption0.query.data,
     tokenOption1.query.data,
     tokenOption2.query.data,
-    tokenOption3.query.data,
   ];
 
   const isPairedWeth =
@@ -221,9 +216,7 @@ export function LaunchClient() {
     };
   });
   const pairedSymbol = isPairedWeth
-    ? swapDirection === "pairedToToken"
-      ? "WETH"
-      : "ETH"
+    ? "ETH"
     : (pairedTokenData?.token.symbol ?? "Paired Token");
   const inputSymbol =
     swapDirection === "pairedToToken" ? pairedSymbol : targetSymbol;
@@ -279,10 +272,31 @@ export function LaunchClient() {
 
   const hasAmount = swapAmount.trim().length > 0;
   const invalidAmount = hasAmount && parsedSwapAmount === 0n;
+  const hasQuoteInput =
+    Boolean(poolKey && pairedTokenAddress) &&
+    hasAmount &&
+    !invalidAmount &&
+    parsedSwapAmount > 0n;
 
   const inputBalanceValue = useNativeInput
     ? nativeBalance.data?.value
     : inputTokenBalance.data?.value;
+  const nativeBalanceValue = nativeBalance.data?.value ?? 0n;
+  const wrappedBalanceValue = inputTokenBalance.data?.value ?? 0n;
+  const canWrapForInput = isPairedWeth && swapDirection === "pairedToToken";
+  const effectiveInputBalance = canWrapForInput
+    ? wrappedBalanceValue + nativeBalanceValue
+    : inputBalanceValue;
+  const hasEnoughInputToken =
+    effectiveInputBalance !== undefined
+      ? effectiveInputBalance >= parsedSwapAmount
+      : true;
+  const nativeBalanceDisplay = formatShortAmount(
+    formatUnits(nativeBalanceValue, 18),
+  );
+  const wrappedBalanceDisplay = formatShortAmount(
+    formatUnits(wrappedBalanceValue, 18),
+  );
 
   const zeroForOne = useMemo(() => {
     if (!poolKey || !pairedTokenAddress) return true;
@@ -313,7 +327,7 @@ export function LaunchClient() {
   } as Parameters<typeof useSwap>[0];
 
   const swap = useSwap(swapParams, {
-    enabled: Boolean(poolKey && pairedTokenAddress) && parsedSwapAmount > 0n,
+    enabled: hasQuoteInput,
     chainId: BASE_CHAIN_ID,
     refetchInterval: QUOTE_REFRESH_INTERVAL,
   });
@@ -343,6 +357,7 @@ export function LaunchClient() {
   const lastRefreshRef = useRef(Date.now());
   const wasQuoteFetchingRef = useRef(false);
   const refreshedTxHashRef = useRef<`0x${string}` | undefined>(undefined);
+  const scheduledRefreshTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
 
   useEffect(() => {
     if (!swapQuote || isSwapConfirmed) return;
@@ -379,7 +394,9 @@ export function LaunchClient() {
   }, [swapQuote, isSwapConfirmed]);
 
   const refreshAll = useCallback(() => {
-    void swap.steps.quote.refetch();
+    if (hasQuoteInput) {
+      void swap.steps.quote.refetch();
+    }
     void nativeBalance.refetch();
     void inputTokenBalance.refetch();
     void targetToken.query.refetch();
@@ -388,34 +405,61 @@ export function LaunchClient() {
     setSecondsUntilRefresh(QUOTE_REFRESH_INTERVAL / 1000);
   }, [
     inputTokenBalance,
+    hasQuoteInput,
     nativeBalance,
     pairedToken.query,
     swap.steps.quote,
     targetToken.query,
   ]);
 
+  const clearScheduledRefreshes = useCallback(() => {
+    for (const timer of scheduledRefreshTimersRef.current) {
+      clearTimeout(timer);
+    }
+    scheduledRefreshTimersRef.current = [];
+  }, []);
+
+  const scheduleRefreshBurst = useCallback(() => {
+    clearScheduledRefreshes();
+
+    const refreshDelays = [0, 1_500, 5_000, 10_000] as const;
+    for (const delay of refreshDelays) {
+      const timer = setTimeout(() => {
+        refreshAll();
+      }, delay);
+      scheduledRefreshTimersRef.current.push(timer);
+    }
+  }, [clearScheduledRefreshes, refreshAll]);
+
+  useEffect(() => {
+    return () => {
+      clearScheduledRefreshes();
+    };
+  }, [clearScheduledRefreshes]);
+
   useEffect(() => {
     if (txStatus !== "confirmed" || !swapTxHash) return;
     if (refreshedTxHashRef.current === swapTxHash) return;
 
     refreshedTxHashRef.current = swapTxHash;
-    refreshAll();
-
-    const delayedRefresh = setTimeout(() => {
-      refreshAll();
-    }, 1_500);
-
-    return () => clearTimeout(delayedRefresh);
-  }, [refreshAll, swapTxHash, txStatus]);
+    setSwapAmount("");
+    setSwapErrorMessage(null);
+    scheduleRefreshBurst();
+  }, [scheduleRefreshBurst, swapTxHash, txStatus]);
 
   const onSwap = useCallback(async () => {
     setSwapErrorMessage(null);
 
+    if (!hasEnoughInputToken) {
+      setSwapErrorMessage(`Insufficient ${inputSymbol} balance.`);
+      return;
+    }
+
     setIsExecuting(true);
 
     try {
-      if (isPairedWeth && swapDirection === "pairedToToken") {
-        const wrappedBalance = inputTokenBalance.data?.value ?? 0n;
+      if (canWrapForInput) {
+        const wrappedBalance = wrappedBalanceValue;
 
         if (parsedSwapAmount > wrappedBalance) {
           const wrapAmount = parsedSwapAmount - wrappedBalance;
@@ -436,8 +480,10 @@ export function LaunchClient() {
       }
 
       await swap.executeAll();
+      scheduleRefreshBurst();
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
+
       if (shouldShowExecutionError(message)) {
         setSwapErrorMessage(message);
       }
@@ -445,21 +491,25 @@ export function LaunchClient() {
       setIsExecuting(false);
     }
   }, [
+    canWrapForInput,
+    hasEnoughInputToken,
+    inputSymbol,
     inputTokenBalance,
-    isPairedWeth,
     parsedSwapAmount,
     publicClient,
+    scheduleRefreshBurst,
     sendTransactionAsync,
     swap,
-    swapDirection,
+    wrappedBalanceValue,
   ]);
 
   const onReset = useCallback(() => {
     swap.reset();
     setSwapErrorMessage(null);
     setIsExecuting(false);
-    refreshAll();
-  }, [refreshAll, swap]);
+    refreshedTxHashRef.current = undefined;
+    scheduleRefreshBurst();
+  }, [scheduleRefreshBurst, swap]);
 
   const topStatusMessage = useMemo(() => {
     if (!isConnected) return "Connect wallet to begin";
@@ -468,12 +518,16 @@ export function LaunchClient() {
     if (!poolKey || !pairedTokenAddress) return "Loading pool configuration";
     if (!hasAmount) return "Enter an amount to get a quote";
     if (invalidAmount) return "Enter a valid amount";
+    if (!hasEnoughInputToken) return `Insufficient ${inputSymbol} balance`;
     if (isQuoteLoading) return "Fetching quote";
-    if (swap.steps.quote.error) return "Quote failed";
+    if (hasQuoteInput && swap.steps.quote.error) return "Quote failed";
     if (isSwapConfirmed) return "Swap confirmed";
     return "Ready to swap";
   }, [
     hasAmount,
+    hasQuoteInput,
+    hasEnoughInputToken,
+    inputSymbol,
     invalidAmount,
     isConnected,
     isQuoteLoading,
@@ -487,17 +541,18 @@ export function LaunchClient() {
 
   const errorMessage =
     poolKeyError ||
-    swap.steps.quote.error?.message ||
+    (!hasEnoughInputToken && hasAmount
+      ? `Insufficient ${inputSymbol} balance for this swap amount.`
+      : null) ||
+    (hasQuoteInput ? swap.steps.quote.error?.message : null) ||
     swapTxError ||
     swapErrorMessage;
 
   const canSwap =
     isConnected &&
     !wrongNetwork &&
-    Boolean(poolKey && pairedTokenAddress) &&
-    hasAmount &&
-    !invalidAmount &&
-    parsedSwapAmount > 0n &&
+    hasQuoteInput &&
+    hasEnoughInputToken &&
     !isQuoteLoading &&
     !isSwapPending &&
     !isExecuting;
@@ -699,6 +754,13 @@ export function LaunchClient() {
               </button>
             </div>
 
+            {canWrapForInput ? (
+              <p className="mt-3 rounded-xl border border-[#2d2d39] bg-[#171722] px-3 py-2 text-xs text-[#b6b6c8]">
+                Paying with ETH. If your WETH balance is low, the app will wrap
+                ETH to WETH automatically before swapping.
+              </p>
+            ) : null}
+
             <div className="mt-4 grid gap-3 sm:grid-cols-2">
               <div className="rounded-xl border border-[#2d2d39] bg-[#171722] p-3">
                 <p className="text-xs font-medium text-[#b2b2c4]">You pay</p>
@@ -722,13 +784,19 @@ export function LaunchClient() {
                 </div>
                 <p className="mt-2 text-xs text-[#a9a9bd]">
                   Balance:{" "}
-                  {inputBalanceValue !== undefined
+                  {effectiveInputBalance !== undefined
                     ? formatShortAmount(
-                        formatUnits(inputBalanceValue, inputDecimals),
+                        formatUnits(effectiveInputBalance, inputDecimals),
                       )
                     : "-"}{" "}
                   {inputSymbol}
                 </p>
+                {canWrapForInput ? (
+                  <p className="mt-1 text-xs text-[#8f8fa6]">
+                    Available: {nativeBalanceDisplay} ETH +{" "}
+                    {wrappedBalanceDisplay} WETH
+                  </p>
+                ) : null}
               </div>
 
               <div className="rounded-xl border border-[#2d2d39] bg-[#171722] p-3">
@@ -810,7 +878,9 @@ export function LaunchClient() {
                       ? "Enter amount"
                       : invalidAmount
                         ? "Enter valid amount"
-                        : "Swap"}
+                        : !hasEnoughInputToken
+                          ? `Insufficient ${inputSymbol}`
+                          : "Swap"}
                 </button>
               )}
             </div>

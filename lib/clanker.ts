@@ -23,23 +23,21 @@ export type ClankerTokenOption = {
 export const CLANKER_TOKEN_OPTIONS = [
   {
     address: "0xf48bC234855aB08ab2EC0cfaaEb2A80D065a3b07",
-    poolId: "0x6c8fd04c19e3c6c3efc21f6f5ae79c1453a19d971b7b7d4969df1928c380aaad",
+    poolId:
+      "0x6c8fd04c19e3c6c3efc21f6f5ae79c1453a19d971b7b7d4969df1928c380aaad",
     protocol: "v4",
   },
   {
     address: "0x9f86dB9fc6f7c9408e8Fda3Ff8ce4e78ac7a6b07",
-    poolId: "0x9fd58e73d8047cb14ac540acd141d3fc1a41fb6252d674b730faf62fe24aa8ce",
+    poolId:
+      "0x9fd58e73d8047cb14ac540acd141d3fc1a41fb6252d674b730faf62fe24aa8ce",
     protocol: "v4",
   },
   {
     address: "0xB6830e61aEBa58E07884983451D26880b4078b07",
-    poolId: "0x28e472ff6d2240d2b944af3cd823727c717281acf7d17e7a0c8ab000fa8d1589",
+    poolId:
+      "0x28e472ff6d2240d2b944af3cd823727c717281acf7d17e7a0c8ab000fa8d1589",
     protocol: "v4",
-  },
-  {
-    address: "0x7D928816CC9c462DD7adef911De41535E444CB07",
-    poolId: "0xFC01837343cfC2A9dDCA9e8a0a19825f6b2f0460",
-    protocol: "v3",
   },
 ] as const satisfies readonly ClankerTokenOption[];
 
@@ -54,7 +52,9 @@ export function getPoolKeyForPair(
   direction: ClankerSwapDirection,
 ) {
   const [currency0, currency1] =
-    tokenAddress.toLowerCase() < pairedToken.toLowerCase() ? [tokenAddress, pairedToken] : [pairedToken, tokenAddress];
+    tokenAddress.toLowerCase() < pairedToken.toLowerCase()
+      ? [tokenAddress, pairedToken]
+      : [pairedToken, tokenAddress];
 
   const inputToken = direction === "pairedToToken" ? pairedToken : tokenAddress;
   const zeroForOne = inputToken.toLowerCase() === currency0.toLowerCase();

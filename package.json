@@ -12,7 +12,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint .",
-    "anvil:base": "anvil --fork-url ${BASE_MAINNET_RPC_URL:-https://mainnet.base.org} --chain-id 8453 --prune-history --mnemonic-seed-unsafe 1337 --block-time 2",
+    "anvil:base": "anvil --fork-url ${BASE_MAINNET_RPC_URL:-https://mainnet.base.org} --chain-id 8453  --mnemonic-seed-unsafe 1337 --block-time 2",
     "clean": "rm -rf .turbo && rm -rf node_modules && rm -rf .next"
   },
   "dependencies": {

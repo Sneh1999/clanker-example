@@ -1,6 +1,6 @@
 "use client";
 
-import type { PropsWithChildren } from "react";
+import { type PropsWithChildren } from "react";
 
 import { darkTheme, RainbowKitProvider } from "@rainbow-me/rainbowkit";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -8,7 +8,7 @@ import { UniswapSDKProvider } from "@zahastudio/uniswap-sdk-react";
 import { WagmiProvider } from "wagmi";
 import { hashFn } from "wagmi/query";
 
-import { wagmiConfig } from "@/lib/wagmi";
+import { getWagmiConfig } from "@/lib/wagmi";
 
 import "@rainbow-me/rainbowkit/styles.css";
 
@@ -23,6 +23,8 @@ const queryClient = new QueryClient({
 });
 
 export function Providers({ children }: PropsWithChildren) {
+  const wagmiConfig = getWagmiConfig();
+
   return (
     <QueryClientProvider client={queryClient}>
       <WagmiProvider config={wagmiConfig}>

@@ -9,7 +9,6 @@ import {
   useAccount,
   useBalance,
   usePublicClient,
-  useSendTransaction,
   useSwitchChain,
 } from "wagmi";
 
@@ -23,8 +22,6 @@ import {
 } from "@/lib/clanker";
 
 const QUOTE_REFRESH_INTERVAL = 30_000;
-
-const WETH_DEPOSIT_CALLDATA = "0xd0e30db0" as const;
 
 const POOL_KEY_ABI = [
   {
@@ -67,7 +64,6 @@ function formatShortAmount(amount: string, precision = 6) {
 export function LaunchClient() {
   const { address, isConnected, chainId } = useAccount();
   const { switchChain } = useSwitchChain();
-  const { sendTransactionAsync } = useSendTransaction();
   const publicClient = usePublicClient({ chainId: BASE_CHAIN_ID });
 
   const [selectedTokenAddress, setSelectedTokenAddress] = useState<Address>(
@@ -94,13 +90,6 @@ export function LaunchClient() {
 
   useEffect(() => {
     if (!publicClient) return;
-
-    if (selectedTokenOption.protocol !== "v4") {
-      setPoolKey(null);
-      setPoolKeyError("This demo only supports V4 pools for quoting/swapping.");
-      return;
-    }
-
     let active = true;
     setPoolKeyError(null);
 
@@ -191,9 +180,7 @@ export function LaunchClient() {
 
   const isPairedWeth =
     pairedTokenAddress?.toLowerCase() === CLANKER_ADDRESSES.weth.toLowerCase();
-  const useNativeETH = isPairedWeth && swapDirection === "tokenToPaired";
-  const useNativeInput = false;
-  const useNativeOutput = isPairedWeth && swapDirection === "tokenToPaired";
+  const useNativeETH = isPairedWeth;
 
   const targetSymbol = targetTokenData?.token.symbol || "TOKEN";
   const selectedTokenLabel =
@@ -206,7 +193,7 @@ export function LaunchClient() {
     const sublabel = tokenData?.symbol
       ? `${tokenData.symbol} token`
       : "Loading token metadata";
-    const protocolLabel = tokenOption.protocol === "v4" ? "V4" : "V3.1";
+    const protocolLabel = "V4"
 
     return {
       address: tokenOption.address,
@@ -238,6 +225,7 @@ export function LaunchClient() {
     swapDirection === "pairedToToken"
       ? pairedTokenAddress
       : selectedTokenAddress;
+  const isNativeEthInputSwap = useNativeETH && swapDirection === "pairedToToken";
 
   const nativeBalance = useBalance({
     address,
@@ -248,16 +236,14 @@ export function LaunchClient() {
   const inputTokenBalance = useBalance({
     address,
     chainId: BASE_CHAIN_ID,
-    token: useNativeInput ? undefined : (inputTokenAddress ?? undefined),
+    token: inputTokenAddress ?? undefined,
     query: {
-      enabled: Boolean(address && (useNativeInput || inputTokenAddress)),
+      enabled: Boolean(address && inputTokenAddress),
       refetchInterval: 15_000,
     },
   });
 
-  const balanceInputDecimals = useNativeInput
-    ? 18
-    : inputTokenBalance.data?.decimals;
+  const balanceInputDecimals = inputTokenBalance.data?.decimals;
   const inputDecimals = balanceInputDecimals ?? fallbackInputDecimals;
 
   const parsedSwapAmount = useMemo(() => {
@@ -278,25 +264,15 @@ export function LaunchClient() {
     !invalidAmount &&
     parsedSwapAmount > 0n;
 
-  const inputBalanceValue = useNativeInput
-    ? nativeBalance.data?.value
-    : inputTokenBalance.data?.value;
-  const nativeBalanceValue = nativeBalance.data?.value ?? 0n;
-  const wrappedBalanceValue = inputTokenBalance.data?.value ?? 0n;
-  const canWrapForInput = isPairedWeth && swapDirection === "pairedToToken";
-  const effectiveInputBalance = canWrapForInput
-    ? wrappedBalanceValue + nativeBalanceValue
-    : inputBalanceValue;
+  const tokenInputBalanceValue = inputTokenBalance.data?.value;
+  const nativeInputBalanceValue = nativeBalance.data?.value;
+  const effectiveInputBalance = isNativeEthInputSwap
+    ? nativeInputBalanceValue
+    : tokenInputBalanceValue;
   const hasEnoughInputToken =
     effectiveInputBalance !== undefined
       ? effectiveInputBalance >= parsedSwapAmount
       : true;
-  const nativeBalanceDisplay = formatShortAmount(
-    formatUnits(nativeBalanceValue, 18),
-  );
-  const wrappedBalanceDisplay = formatShortAmount(
-    formatUnits(wrappedBalanceValue, 18),
-  );
 
   const zeroForOne = useMemo(() => {
     if (!poolKey || !pairedTokenAddress) return true;
@@ -322,8 +298,6 @@ export function LaunchClient() {
     zeroForOne,
     slippageBps: 50,
     useNativeETH,
-    useNativeInput,
-    useNativeOutput,
   } as Parameters<typeof useSwap>[0];
 
   const swap = useSwap(swapParams, {
@@ -404,9 +378,9 @@ export function LaunchClient() {
     lastRefreshRef.current = Date.now();
     setSecondsUntilRefresh(QUOTE_REFRESH_INTERVAL / 1000);
   }, [
+    nativeBalance,
     inputTokenBalance,
     hasQuoteInput,
-    nativeBalance,
     pairedToken.query,
     swap.steps.quote,
     targetToken.query,
@@ -458,27 +432,6 @@ export function LaunchClient() {
     setIsExecuting(true);
 
     try {
-      if (canWrapForInput) {
-        const wrappedBalance = wrappedBalanceValue;
-
-        if (parsedSwapAmount > wrappedBalance) {
-          const wrapAmount = parsedSwapAmount - wrappedBalance;
-
-          if (!publicClient) {
-            throw new Error("Public client unavailable for WETH wrapping.");
-          }
-
-          const wrapHash = await sendTransactionAsync({
-            to: CLANKER_ADDRESSES.weth,
-            data: WETH_DEPOSIT_CALLDATA,
-            value: wrapAmount,
-          });
-
-          await publicClient.waitForTransactionReceipt({ hash: wrapHash });
-          await inputTokenBalance.refetch();
-        }
-      }
-
       await swap.executeAll();
       scheduleRefreshBurst();
     } catch (error) {
@@ -491,16 +444,10 @@ export function LaunchClient() {
       setIsExecuting(false);
     }
   }, [
-    canWrapForInput,
     hasEnoughInputToken,
     inputSymbol,
-    inputTokenBalance,
-    parsedSwapAmount,
-    publicClient,
     scheduleRefreshBurst,
-    sendTransactionAsync,
     swap,
-    wrappedBalanceValue,
   ]);
 
   const onReset = useCallback(() => {
@@ -729,11 +676,10 @@ export function LaunchClient() {
                   setSwapErrorMessage(null);
                 }}
                 disabled={isExecuting || isSwapPending}
-                className={`rounded-xl border px-3 py-2.5 text-sm font-medium transition ${
-                  swapDirection === "pairedToToken"
-                    ? "border-[#fc72ff] bg-[rgba(252,114,255,0.16)] text-[#fd8fff]"
-                    : "border-[#2d2d39] bg-[#171722] text-[#b5b5c7] hover:bg-[#1d1d2b]"
-                } disabled:cursor-not-allowed disabled:opacity-50`}
+                className={`rounded-xl border px-3 py-2.5 text-sm font-medium transition ${swapDirection === "pairedToToken"
+                  ? "border-[#fc72ff] bg-[rgba(252,114,255,0.16)] text-[#fd8fff]"
+                  : "border-[#2d2d39] bg-[#171722] text-[#b5b5c7] hover:bg-[#1d1d2b]"
+                  } disabled:cursor-not-allowed disabled:opacity-50`}
               >
                 {pairedSymbol} to {targetSymbol}
               </button>
@@ -744,22 +690,14 @@ export function LaunchClient() {
                   setSwapErrorMessage(null);
                 }}
                 disabled={isExecuting || isSwapPending}
-                className={`rounded-xl border px-3 py-2.5 text-sm font-medium transition ${
-                  swapDirection === "tokenToPaired"
-                    ? "border-[#fc72ff] bg-[rgba(252,114,255,0.16)] text-[#fd8fff]"
-                    : "border-[#2d2d39] bg-[#171722] text-[#b5b5c7] hover:bg-[#1d1d2b]"
-                } disabled:cursor-not-allowed disabled:opacity-50`}
+                className={`rounded-xl border px-3 py-2.5 text-sm font-medium transition ${swapDirection === "tokenToPaired"
+                  ? "border-[#fc72ff] bg-[rgba(252,114,255,0.16)] text-[#fd8fff]"
+                  : "border-[#2d2d39] bg-[#171722] text-[#b5b5c7] hover:bg-[#1d1d2b]"
+                  } disabled:cursor-not-allowed disabled:opacity-50`}
               >
                 {targetSymbol} to {pairedSymbol}
               </button>
             </div>
-
-            {canWrapForInput ? (
-              <p className="mt-3 rounded-xl border border-[#2d2d39] bg-[#171722] px-3 py-2 text-xs text-[#b6b6c8]">
-                Paying with ETH. If your WETH balance is low, the app will wrap
-                ETH to WETH automatically before swapping.
-              </p>
-            ) : null}
 
             <div className="mt-4 grid gap-3 sm:grid-cols-2">
               <div className="rounded-xl border border-[#2d2d39] bg-[#171722] p-3">
@@ -786,17 +724,11 @@ export function LaunchClient() {
                   Balance:{" "}
                   {effectiveInputBalance !== undefined
                     ? formatShortAmount(
-                        formatUnits(effectiveInputBalance, inputDecimals),
-                      )
+                      formatUnits(effectiveInputBalance, inputDecimals),
+                    )
                     : "-"}{" "}
                   {inputSymbol}
                 </p>
-                {canWrapForInput ? (
-                  <p className="mt-1 text-xs text-[#8f8fa6]">
-                    Available: {nativeBalanceDisplay} ETH +{" "}
-                    {wrappedBalanceDisplay} WETH
-                  </p>
-                ) : null}
               </div>
 
               <div className="rounded-xl border border-[#2d2d39] bg-[#171722] p-3">

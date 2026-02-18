@@ -77,7 +77,7 @@ export function LaunchClient() {
   const [poolKeyError, setPoolKeyError] = useState<string | null>(null);
   const [swapDirection, setSwapDirection] =
     useState<ClankerSwapDirection>("pairedToToken");
-  const [swapAmount, setSwapAmount] = useState<string>("0.01");
+  const [swapAmount, setSwapAmount] = useState<string>("");
   const [swapErrorMessage, setSwapErrorMessage] = useState<string | null>(null);
   const [isExecuting, setIsExecuting] = useState(false);
 
@@ -698,7 +698,7 @@ export function LaunchClient() {
                   onChange={(event) => {
                     setSelectedTokenAddress(event.target.value as Address);
                     setSwapDirection("pairedToToken");
-                    setSwapAmount("0.01");
+                    setSwapAmount("");
                     setSwapErrorMessage(null);
                     setIsExecuting(false);
                   }}

@@ -1,0 +1,12 @@
+@import "tailwindcss";
+
+body {
+  background: #eef5fb;
+  color: #111827;
+  font-family: var(--font-space-grotesk), "Avenir Next", "Segoe UI", sans-serif;
+}
+
+code,
+pre {
+  font-family: var(--font-jetbrains-mono), "SF Mono", "Menlo", monospace;
+}

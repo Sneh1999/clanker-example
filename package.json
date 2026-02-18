@@ -1,0 +1,39 @@
+{
+  "name": "clanker-example",
+  "version": "0.0.0",
+  "private": true,
+  "packageManager": "pnpm@10.29.3",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "dev": "next dev",
+    "dev:anvil": "NEXT_PUBLIC_BASE_RPC_URL=http://127.0.0.1:8545 next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "eslint .",
+    "anvil:base": "anvil --fork-url ${BASE_MAINNET_RPC_URL:-https://mainnet.base.org} --chain-id 8453 --prune-history --mnemonic-seed-unsafe 1337 --block-time 2",
+    "clean": "rm -rf .turbo && rm -rf node_modules && rm -rf .next"
+  },
+  "dependencies": {
+    "@rainbow-me/rainbowkit": "^2.2.10",
+    "@tanstack/react-query": "^5.90.21",
+    "@zahastudio/uniswap-sdk": "^0.1.0",
+    "@zahastudio/uniswap-sdk-react": "^0.1.0",
+    "next": "^16.1.6",
+    "react": "^19.2.4",
+    "react-dom": "^19.2.4",
+    "viem": "^2.46.0",
+    "wagmi": "^2.19.5"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4.1.18",
+    "@types/node": "^24.10.13",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "eslint": "^9.39.2",
+    "eslint-config-next": "^16.1.6",
+    "tailwindcss": "^4.1.18",
+    "typescript": "^5.9.3"
+  }
+}
